@@ -1,0 +1,159 @@
+---
+title: "Project 1"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+NYPD <- read.csv("NYPD_Motor_Vehicle_Collisions.csv", na.strings="", stringsAsFactors=FALSE)
+```
+```{r}
+library(dplyr)
+library(leaflet)
+library(stringr)
+library(wordcloud2)
+library(ggplot2)
+library(gridExtra)
+library(changepoint)
+```
+
+```{r}
+#Map Location - Sum of injured and Sum of killed 
+
+NYPD_map<-summarise(group_by(NYPD,LATITUDE,LONGITUDE),sum_injured = sum(NUMBER.OF.PERSONS.INJURED, na.rm = TRUE),sum_killed = sum(NUMBER.OF.PERSONS.KILLED,na.rm = TRUE))
+
+NYPD_top1<-arrange(NYPD_map,desc(sum_injured))
+NYPD_top1<-na.omit(NYPD_top1)
+NYPD_top1<-head(NYPD_top1,100)
+NYPD_top1$Type<-c("injured")
+NYPD_top2<-arrange(NYPD_map,desc(sum_killed))
+NYPD_top2<-na.omit(NYPD_top2)
+NYPD_top2<-head(NYPD_top2,100)
+NYPD_top2$Type<-c("killed")
+NYPD_top<-rbind(NYPD_top1,NYPD_top2)
+
+leaflet(NYPD_top)%>%addProviderTiles("OpenStreetMap.DE")%>%setView(-74.00, 40.71, zoom = 12)%>%addCircles(data=NYPD_top[NYPD_top$Type=="injured",],popup=NYPD_top$BOROUGH,col = "blue",weight = NYPD_top$sum_injured/10)%>%addCircles(data=NYPD_top[NYPD_top$Type=="killed",],popup=NYPD_top$sum_killed,col = "red",weight = NYPD_top$sum_killed*2)
+
+leaflet(NYPD_top)%>%addProviderTiles("Esri.WorldStreetMap")%>%setView(-74.00, 40.71, zoom = 12)%>%addCircles(data=NYPD_top[NYPD_top$Type=="injured",],popup=NYPD_top$BOROUGH,col = "blue",weight = NYPD_top$sum_injured/10)%>%addCircles(data=NYPD_top[NYPD_top$Type=="killed",],popup=NYPD_top$sum_killed,col = "red",weight = NYPD_top$sum_killed*2)
+```
+
+```{r}
+#variaty of Injured and Variaty of killed (bar chart)
+NYPD$YEAR<-str_sub(NYPD$DATE,-4,-1)
+NYPD$MONTH<-str_sub(NYPD$DATE,1,2)
+KindofInjured1<-summarise(group_by(NYPD,YEAR),NumofInjured = sum(NUMBER.OF.PEDESTRIANS.INJURED, na.rm =TRUE))
+KindofInjured1$Type<-c("PEDESTRIANS")
+KindofInjured2<-summarise(group_by(NYPD,YEAR), NumofInjured = sum(NUMBER.OF.CYCLIST.INJURED, na.rm =TRUE))
+KindofInjured2$Type<-c("CYCLIST")
+KindofInjured3<-summarise(group_by(NYPD,YEAR), NumofInjured = sum(NUMBER.OF.MOTORIST.INJURED, na.rm =TRUE))
+KindofInjured3$Type<-c("MONTORIST")
+KindofInjured<-rbind(KindofInjured1,KindofInjured2,KindofInjured3)
+KindofInjured_2018<-filter(KindofInjured,YEAR=='2018')
+KindofInjured_2018$prop<-prop.table(KindofInjured_2018$NumofInjured)
+KindofInjured_2018$prop<-round(KindofInjured_2018$prop,5)
+KindofInjured_2018$prop<-paste((KindofInjured_2018$prop)*100, "%", sep='')
+p1<-ggplot(KindofInjured_2018,aes(x = prop,y=NumofInjured,fill=Type))+
+  geom_bar(stat="identity",width=1)+coord_polar(theta = "x")+
+  scale_fill_brewer(palette ="Blues",direction = -1)+
+  labs(x="",y="",fill="Type")+
+  ggtitle("Different Injured of 2018")
+
+KindofKilled1<-summarise(group_by(NYPD,YEAR),NumofKilled = sum(NUMBER.OF.PEDESTRIANS.KILLED, na.rm =TRUE))
+KindofKilled1$Type<-c("PEDESTRIANS")
+KindofKilled2<-summarise(group_by(NYPD,YEAR), NumofKilled = sum(NUMBER.OF.CYCLIST.KILLED, na.rm =TRUE))
+KindofKilled2$Type<-c("CYCLIST")
+KindofKilled3<-summarise(group_by(NYPD,YEAR), NumofKilled = sum(NUMBER.OF.MOTORIST.KILLED, na.rm =TRUE))
+KindofKilled3$Type<-c("MONTORIST")
+KindofKilled<-rbind(KindofKilled1,KindofKilled2,KindofKilled3)
+KindofKilled_2018<-filter(KindofKilled,YEAR=='2018')
+KindofKilled_2018$prop<-prop.table(KindofKilled_2018$NumofKilled)
+KindofKilled_2018$prop<-round(KindofKilled_2018$prop,3)
+KindofKilled_2018$prop<-paste((KindofKilled_2018$prop)*100, "%", sep='')
+p2<- ggplot(KindofKilled_2018,aes(x = prop,y=NumofKilled,fill=Type))+
+  geom_bar(stat="identity",width=1)+coord_polar(theta = "x")+
+  scale_fill_brewer(palette ="Reds",direction = 1)+
+  labs(x="",y="",fill="Type")+
+  ggtitle("Different Killed of 2018")
+grid.arrange(p1, p2, ncol = 2)
+```
+
+```{r}
+#Persons injured and Persons killed in collision - time series
+
+NYPD$Yearmonth<-str_c(NYPD$YEAR,NYPD$MONTH,sep='-')
+NYPD_Yearmonth_injured<-summarise(group_by(NYPD,Yearmonth),Sum = sum(NUMBER.OF.PERSONS.INJURED, na.rm = TRUE))
+
+NYPD_Yearmonth_killed<-summarise(group_by(NYPD,Yearmonth),Sum = sum(NUMBER.OF.PERSONS.KILLED, na.rm = TRUE)*100)
+NYPD_Yearmonth_injured$Type<-c("Person Injured")
+NYPD_Yearmonth_killed$Type<-c("Person Killed (*100) ")
+NYPD_Yearmonth<-rbind(NYPD_Yearmonth_injured,NYPD_Yearmonth_killed)
+ggplot(NYPD_Yearmonth, aes(x=Yearmonth, y=Sum, group=Type, color=Type))+geom_line(size=0.7)+theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5,size = 8))+ggtitle("TIME SERIES of Persons Injured and Persons killed in Collision")+scale_x_discrete(labels=c("2012-08"="","2012-09"="","2012-11"="","2012-12"="","2013-02"="","2013-03"="","2013-05"="","2013-06"="","2013-08"="","2013-09"="","2013-11"="","2013-12"="","2014-02"="","2014-03"="","2014-05"="","2014-06"="","2014-08"="","2014-09"="","2014-11"="","2014-12"="","2015-02"="","2015-03"="","2015-05"="","2015-06"="","2015-08"="","2015-09"="","2015-11"="","2015-12"="","2016-02"="","2016-03"="","2016-05"="","2016-06"="","2016-08"="","2016-09"="","2016-11"="","2016-12"="","2017-02"="","2017-03"="","2017-05"="","2017-06"="","2017-08"="","2017-09"="","2017-11"="","2017-12"="","2018-02"="","2018-03"="","2018-05"="","2018-06"="","2018-08"="","2018-09"="","2018-11"=""))
+
+```
+
+```{r}
+#Contribution.Factor - Wordcloud
+
+Vehicle<-data.frame(Factor1 = NYPD$CONTRIBUTING.FACTOR.VEHICLE.1, Factor2 = NYPD$VEHICLE.TYPE.CODE.1)
+Vehicle<-na.omit(Vehicle)
+Vehicle_Sum<-summarise(group_by(Vehicle,Factor1),Freq = n())
+Vehicle_Sum<-arrange(Vehicle_Sum,desc(Freq))
+
+wordcloud2(Vehicle_Sum, size = 5, shape = 'circle',color = 'random-light')
+```
+
+```{r}
+#time series(borough)
+#shown in year
+NYPD$YEAR<-str_sub(NYPD$DATE,-4,-1)
+NYPD_YEAR_injured<-summarise(group_by(NYPD,YEAR,BOROUGH),Sum = sum(NUMBER.OF.PERSONS.INJURED, na.rm = TRUE))
+NYPD_YEAR_injured<-na.omit(NYPD_YEAR_injured)
+NYPD_YEAR_killed<-summarise(group_by(NYPD,YEAR,BOROUGH),Sum = sum(NUMBER.OF.PERSONS.KILLED, na.rm = TRUE))
+NYPD_YEAR_killed<-na.omit(NYPD_YEAR_killed)
+p3<-ggplot(NYPD_YEAR_injured, aes(x=YEAR, y=Sum, group=BOROUGH, color=BOROUGH))+geom_line(size=0.7)+theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5,size = 8))+ggtitle("INJURED IN BOROUGH(2012-2018) ")
+p4<-ggplot(NYPD_YEAR_killed, aes(x=YEAR, y=Sum, group=BOROUGH, color=BOROUGH))+geom_line(size=0.7)+theme(axis.text.x = element_text(angle = 45, hjust = 0.5, vjust = 0.5,size = 8))+ggtitle("KILLED IN BOROUGH (2012-2018)")
+grid.arrange(p3, p4, nrow= 2)
+```
+
+```{r}
+ #Factors count=collisions
+NYPD_2018_1<-filter(NYPD,YEAR == '2018',BOROUGH =="BRONX")
+NYPD_2018_2<-filter(NYPD,YEAR == '2018',BOROUGH =="BROOKLYN")
+NYPD_2018_3<-filter(NYPD,YEAR == '2018',BOROUGH =="MANHATTAN")
+NYPD_2018_4<-filter(NYPD,YEAR == '2018',BOROUGH =="QUEENS")
+NYPD_2018_5<-filter(NYPD,YEAR == '2018',BOROUGH =="STATEN ISLAND")
+NYPD_Factor_1<-summarize(group_by(NYPD_2018_1,Factor = NYPD_2018_1$VEHICLE.TYPE.CODE.1),count=n())
+NYPD_Factor_2<-summarize(group_by(NYPD_2018_2,Factor = NYPD_2018_2$VEHICLE.TYPE.CODE.1),count=n())
+NYPD_Factor_3<-summarize(group_by(NYPD_2018_3,Factor = NYPD_2018_3$VEHICLE.TYPE.CODE.1),count=n())
+NYPD_Factor_4<-summarize(group_by(NYPD_2018_4,Factor = NYPD_2018_4$VEHICLE.TYPE.CODE.1),count=n())
+NYPD_Factor_5<-summarize(group_by(NYPD_2018_5,Factor = NYPD_2018_5$VEHICLE.TYPE.CODE.1),count=n())
+NYPD_Factor_1<-na.omit(NYPD_Factor_1)
+NYPD_Factor_2<-na.omit(NYPD_Factor_2)
+NYPD_Factor_3<-na.omit(NYPD_Factor_3)
+NYPD_Factor_4<-na.omit(NYPD_Factor_4)
+NYPD_Factor_5<-na.omit(NYPD_Factor_5)
+NYPD_Factor_1<-head(arrange(NYPD_Factor_1,desc(count)),5)
+NYPD_Factor_2<-head(arrange(NYPD_Factor_2,desc(count)),5)
+NYPD_Factor_3<-head(arrange(NYPD_Factor_3,desc(count)),5)
+NYPD_Factor_4<-head(arrange(NYPD_Factor_4,desc(count)),5)
+NYPD_Factor_5<-head(arrange(NYPD_Factor_5,desc(count)),5)
+
+NYPD_Factor_1$BOROUGH<-c("BRONX")
+NYPD_Factor_2$BOROUGH<-c("BROOKLYN")
+NYPD_Factor_3$BOROUGH<-c("MANHATTAN")
+NYPD_Factor_4$BOROUGH<-c("QUEENS")
+NYPD_Factor_5$BOROUGH<-c("STATEN ISLAND")
+NYPD_Factor<-rbind(NYPD_Factor_1,NYPD_Factor_2,NYPD_Factor_3,NYPD_Factor_4,NYPD_Factor_5)
+
+ggplot(NYPD_Factor,aes(x=BOROUGH, y=count,fill=Factor)) +
+  geom_bar(stat="identity", position="dodge") +
+  theme_bw() +
+  theme(panel.background = element_rect(fill="grey98"),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.x=element_text(size=14,face="bold",vjust=-0.2),
+        axis.title.y=element_text(size=14,face="bold",vjust=0.15),
+        axis.ticks.x = element_line(size = 2)) +
+        ggtitle("TOP5 Vehicle Types in different Boroughs(2018)")
+```
+
